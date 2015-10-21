@@ -1,0 +1,27 @@
+{
+  "name": "romka-chev/yii2-images-module",
+  "description": "yii2 images module for storing images",
+  "keywords": [
+    "yii2",
+    "images",
+    "module",
+    "behavior"
+  ],
+  "type": "yii2-extension",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Kulikov Roman",
+      "email": "flinnraider@yandex.ru"
+    }
+  ],
+  "minimum-stability": "stable",
+  "require": {
+    "yiisoft/yii2": "~2.0.6"
+  },
+  "autoload": {
+    "psr-4": {
+      "romkaChev\\yii2\\images\\": ""
+    }
+  }
+}
