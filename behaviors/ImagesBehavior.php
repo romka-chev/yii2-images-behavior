@@ -8,12 +8,19 @@ namespace romkaChev\yii2\images\behaviors;
 
 
 use romkaChev\yii2\images\autocomplete\AutocompleteActiveRecord;
+use romkaChev\yii2\images\exceptions\CanNotCopyImageException;
+use romkaChev\yii2\images\exceptions\FileNotExistsException;
+use romkaChev\yii2\images\exceptions\ModelNotLoadedException;
+use romkaChev\yii2\images\exceptions\ModelNotSavedException;
+use romkaChev\yii2\images\helpers\FileHelper;
+use romkaChev\yii2\images\models\IImageInterface;
 use romkaChev\yii2\images\models\Image;
 use romkaChev\yii2\images\models\Placeholder;
 use romkaChev\yii2\images\traits\ImagesModuleTrait;
 use yii\base\Behavior;
+use yii\base\InvalidConfigException;
 use yii\db\ActiveQuery;
-use yii\helpers\FileHelper;
+use yii\helpers\ArrayHelper;
 use yii\web\UploadedFile;
 
 /**
@@ -24,101 +31,113 @@ class ImagesBehavior extends Behavior {
 
 	use ImagesModuleTrait;
 
-	/**
-	 * @var AutocompleteActiveRecord
-	 */
+	/** @var AutocompleteActiveRecord */
 	public $owner;
-
-	/**
-	 * @var string
-	 */
+	/** @var string */
 	public $idAttribute = 'id';
-
-	public $createAliasMethod = false;
-
+	/** @var string */
 	public $modelClass = '\common\modules\images\models\Image';
+	/** @var array */
+	public $modelConfig = [ ];
 
 	/**
-	 * todo
-	 * Method copies image file to module store and creates db record.
-	 *
-	 * @param string|UploadedFile $newImage
-	 * @param bool                $isMain
-	 *
-	 * @return bool|Image
-	 * @throws \Exception
+	 * @inheritdoc
 	 */
-	public function attachImage( $newImage, $isMain = false ) {
-		if ( ! $this->owner->{$this->idAttribute} ) {
-			throw new \Exception( $this->owner->classname() . ' must have an id when you attach image!' );
+	public function init() {
+		parent::init();
+
+		if ( ! $this->owner->canGetProperty( 'idAttribute' ) ) {
+			throw new \LogicException( "Model {$this->owner->className()} has not 'idAttribute' property" );
 		}
+	}
 
-		$pictureFileName = '';
+	/**
+	 * @param string|UploadedFile $file
+	 * @param bool|false          $isMain
+	 *
+	 * @throws FileNotExistsException
+	 * @throws CanNotCopyImageException
+	 * @throws InvalidConfigException
+	 * @throws ModelNotLoadedException
+	 * @throws ModelNotSavedException
+	 *
+	 * @return Image
+	 */
+	public function attachImage( $file, $isMain = false ) {
 
-		if ( $newImage instanceof UploadedFile ) {
-			$sourcePath = $newImage->tempName;
-			$imageExt   = $newImage->extension;
+		$module = $this->getModule();
+		$owner  = $this->owner;
+
+		if ( $file instanceof UploadedFile ) {
+			$sourcePath = $file->tempName;
+			$extension  = mb_strtolower( $file->extension );
 		} else {
-			if ( ! preg_match( '#http#', $newImage ) ) {
-				if ( ! file_exists( $newImage ) ) {
-					throw new \Exception( 'File not exist! :' . $newImage );
+			if ( preg_match( '/http/', $file ) ) {
+				if ( ! FileHelper::remoteFileExists( $file ) ) {
+					throw new FileNotExistsException( $file );
 				}
 			} else {
-				//nothing
+				if ( ! file_exists( $file ) ) {
+					throw new FileNotExistsException( $file );
+				}
 			}
-			$sourcePath = $newImage;
-			$imageExt   = pathinfo( $newImage, PATHINFO_EXTENSION );
+
+			$sourcePath = $file;
+			$extension  = mb_strtolower( pathinfo( $file, PATHINFO_EXTENSION ) );
 		}
 
-		$pictureFileName = substr( sha1( microtime( true ) . $sourcePath ), 4, 12 );
-		$pictureFileName .= '.' . $imageExt;
+		$ds             = $module->ds;
+		$storePath      = $module->storePath;
+		$modelDirectory = $module->getModelDirectory( $owner );
+		$name           = substr( sha1( microtime( true ) . $sourcePath ), 4, 12 ) . $extension;
 
-		if ( ! file_exists( $sourcePath ) ) {
-			throw new \Exception( 'Source file doesnt exist! ' . $sourcePath . ' to ' . $newAbsolutePath );
+		//@formatter:off
+		$modelDirectoryPath = "{$storePath}{$ds}{$modelDirectory}";
+		$destinationPath    = "{$storePath}{$ds}{$modelDirectory}{$ds}{$name}";
+		$modelFilePath      =                  "{$modelDirectory}{$ds}{$name}";
+		//@formatter:on
+
+		FileHelper::createDirectory( $modelDirectoryPath );
+
+		if ( ! copy( $sourcePath, $destinationPath ) ) {
+			throw new CanNotCopyImageException( $sourcePath, $destinationPath );
 		}
 
-		$pictureSubDir = $this->getModule()->getModelSubDir( $this->owner );
-		$storePath     = $this->getModule()->getStorePath( $this->owner );
-
-		$destPath = $storePath .
-		            DIRECTORY_SEPARATOR . $pictureSubDir .
-		            DIRECTORY_SEPARATOR . $pictureFileName;
-
-		FileHelper::createDirectory( $storePath . DIRECTORY_SEPARATOR . $pictureSubDir,
-			0775, true );
-
-		if ( ! copy( $sourcePath, $destPath ) ) {
-			throw new \Exception( 'Failed to copy file from ' . $sourcePath . ' to ' . $destPath );
+		$modelConfig          = $this->modelConfig;
+		$modelConfig['class'] = ArrayHelper::getValue( $modelConfig, 'class', $this->modelClass );
+		/** @var Image $image */
+		$image = \Yii::createObject( $modelConfig );
+		if ( ! $image instanceof IImageInterface ) {
+			unlink( $destinationPath );
+			throw new InvalidConfigException( 'ModelClass property must be instance of \romkaChev\yii2\images\models\IImageInterface' );
 		}
 
-		$image = new $this->modelClass;
-
-		$image->item_id    = $this->owner->{$this->idAttribute};
-		$image->file_path  = $pictureSubDir . '/' . $pictureFileName;
-		$image->model_name = $this->getModule()->getShortClass( $this->owner );
-
-		$image->url_alias = $this->getAlias( $image );
-
-		if ( ! $image->save() ) {
-			return false;
+		$isLoaded = $image->load( [
+			$image->formName() => [
+				'modelId'   => $owner->{$this->idAttribute},
+				'modelName' => $module->getShortClass( $image ),
+				'filePath'  => $modelFilePath
+			]
+		] );
+		if ( ! $isLoaded ) {
+			unlink( $destinationPath );
+			throw new ModelNotLoadedException( $image );
 		}
 
-		if ( count( $image->getErrors() ) > 0 ) {
-			$ar = array_shift( $image->getErrors() );
-
-			unlink( $newAbsolutePath );
-			throw new \Exception( array_shift( $ar ) );
+		$isSaved = $image->save();
+		if ( ! $isSaved ) {
+			unlink( $destinationPath );
+			throw new ModelNotSavedException( $image );
 		}
-		$img = $this->owner->getImage();
 
-		// If main image not exists
-		if (
-			is_object( $img ) && get_class( $img ) == '\common\modules\images\models\PlaceHolder'
-			or
-			$img == null
-			or
-			$isMain
-		) {
+		$currentMainImage = $owner->getImage();
+
+		$isCurrentMainImageNull        = $currentMainImage === null;
+		$isCurrentMainImagePlaceholder = $currentMainImage instanceof Placeholder;
+		$isExplicitDesignation         = $isMain;
+
+		$isMustBeMain = $isCurrentMainImageNull || $isCurrentMainImagePlaceholder || $isExplicitDesignation;
+		if ( $isMustBeMain ) {
 			$this->setMainImage( $image );
 		}
 
@@ -148,17 +167,15 @@ class ImagesBehavior extends Behavior {
 			[ 'not', [ 'id' => $image->id ] ],
 		] );
 
-		$this->owner->clearImagesCache();
-
 		return $this;
 	}
 
 	/**
 	 * @return static
 	 */
-	public function clearImagesCache() {
+	public function flushImagePublishedCopies() {
 		$module   = $this->getModule();
-		$modelDir = $module->getModelSubDir( $this->owner );
+		$modelDir = $module->getModelDirectory( $this->owner );
 
 		$dirToRemove = "{$module->publishPath}{$module->ds}{$modelDir}";
 
@@ -254,4 +271,5 @@ class ImagesBehavior extends Behavior {
 
 		return $this;
 	}
+
 }

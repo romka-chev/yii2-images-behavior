@@ -19,8 +19,8 @@ use romkaChev\yii2\images\models\Placeholder;
  * @method void setMainImage( Image $img )
  * @see     \romkaChev\yii2\images\behaviors\ImagesBehavior::setMainImage
  *
- * @methid  bool clearImagesCache()
- * @see     \romkaChev\yii2\images\behaviors\ImagesBehavior::clearImagesCache
+ * @method  bool clearImagesCache()
+ * @see     \romkaChev\yii2\images\behaviors\ImagesBehavior::flushImagePublishedCopies
  *
  * @method Image[] getImages( $usePlaceholder = true )
  * @see     \romkaChev\yii2\images\behaviors\ImagesBehavior::getImages

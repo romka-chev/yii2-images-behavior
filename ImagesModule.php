@@ -63,7 +63,7 @@ class ImagesModule extends Module {
 	 *
 	 * @return string
 	 */
-	public function getModelSubDir( Model $model ) {
+	public function getModelDirectory( Model $model ) {
 		if ( ! $model->canGetProperty( 'idAttribute' ) ) {
 			throw new \LogicException( "Model {$model->className()} has not 'idAttribute' property" );
 		}
@@ -72,7 +72,7 @@ class ImagesModule extends Module {
 		/** @noinspection PhpUndefinedFieldInspection */
 		$modelId = $model->{$model->idAttribute};
 
-		return $this->_getSubDir( $modelName, $modelId );
+		return $this->_getSubDirectory( $modelName, $modelId );
 	}
 
 	/**
@@ -95,7 +95,7 @@ class ImagesModule extends Module {
 	 *
 	 * @return string
 	 */
-	protected function _getSubDir( $modelName, $modelId ) {
+	protected function _getSubDirectory( $modelName, $modelId ) {
 		$modelDir = "{$modelName}{$modelId}";
 		$baseDir  = Inflector::pluralize( $modelName );
 
@@ -107,8 +107,8 @@ class ImagesModule extends Module {
 	 *
 	 * @return string
 	 */
-	public function getImageSubDir( Image $image ) {
-		return $this->_getSubDir( $image->modelName, $image->modelId );
+	public function getImageDirectory( Image $image ) {
+		return $this->_getSubDirectory( $image->modelName, $image->modelId );
 	}
 
 	/**
