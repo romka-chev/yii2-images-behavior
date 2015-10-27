@@ -24,5 +24,9 @@
     "psr-4": {
       "romkaChev\\yii2\\images\\": ""
     }
+  },
+  "require-dev": {
+    "yiisoft/yii2-codeception": "^2.0",
+    "codeception/codeception": "^2.1"
   }
 }
